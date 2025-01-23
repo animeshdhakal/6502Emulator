@@ -1,10 +1,23 @@
 #include "emulator.h"
 #include <stdio.h>
 
-void lda_set_status(cpu_t *cpu)
+void print_cpu_info(cpu_t *cpu)
 {
-    cpu->zero_flag = cpu->accumulator == 0;
-    cpu->negative_flag = (cpu->accumulator & 0b10000000) > 0;
+    printf("----------------------CPU INFO----------------------\n");
+    printf("Program Counter: 0x%x\n", cpu->program_counter);
+    printf("Stack Pointer: 0x%x\n\n", cpu->stack_pointer);
+
+    printf("Index Register X: 0x%x\n", cpu->index_reg_x);
+    printf("Index Register Y: 0x%x\n", cpu->index_reg_y);
+    printf("Accumulator: 0x%x\n\n", cpu->accumulator);
+
+    printf("Carry Flag: 0x%x\n", cpu->carry_flag);
+    printf("Zero Flag: 0x%x\n", cpu->zero_flag);
+    printf("Interrupt Disable: 0x%x\n", cpu->interrupt_disable);
+    printf("Decimal Mode: 0x%x\n", cpu->decimal_mode);
+    printf("Break Command: 0x%x\n", cpu->break_command);
+    printf("Overflow Flag: 0x%x\n", cpu->overflow_flag);
+    printf("Negative Flag: 0x%x\n", cpu->negative_flag);
 }
 
 void reset_cpu(cpu_t *cpu)
@@ -25,82 +38,66 @@ void reset_cpu(cpu_t *cpu)
     cpu->negative_flag = 0;
 }
 
-void initialize_memory(memory_t *memory)
+void reset_memory(memory_t *memory)
 {
     for (int i = 0; i < MAX_MEMORY; i++) {
         memory->data[i] = 0;
     }
 }
 
-void write_word(memory_t *memory, uint32_t address, uint32_t value, uint32_t *cycles)
+uint8_t fetch_byte(cpu_t *cpu, memory_t *memory, uint8_t *cycles)
 {
-    memory->data[address] = (value & 0xff);
-    memory->data[address] = (value >> 8);
-    (*cycles) -= 2;
-}
-
-uint8_t fetch_byte(cpu_t *cpu, memory_t *memory, uint32_t *cycles)
-{
-    uint8_t instruction = memory->data[cpu->program_counter];
+    uint8_t ins = memory->data[cpu->program_counter];
+    (*cycles)++;
     cpu->program_counter++;
-    (*cycles) -= 1;
-    return instruction;
+    return ins;
 }
 
-uint8_t read_byte(cpu_t *cpu, memory_t *memory, uint32_t *cycles, uint8_t address)
+uint8_t read_byte(cpu_t *cpu, memory_t *memory, uint8_t address, uint8_t *cycles)
 {
-    uint8_t instruction = memory->data[address];
-    (*cycles) -= 1;
-    return instruction;
+    uint8_t value = memory->data[address];
+    (*cycles)++;
+    return value;
 }
 
-uint16_t fetch_word(cpu_t *cpu, memory_t *memory, uint32_t *cycles)
+void set_lda_status(cpu_t *cpu)
 {
-    uint16_t instruction = memory->data[cpu->program_counter];
-    instruction |= (instruction << 8);
-
-    (*cycles) -= 2;
-
-    return instruction;
+    cpu->zero_flag = cpu->accumulator == 0;
+    cpu->negative_flag = (cpu->accumulator >> 6) & 1;
 }
 
-void execute_instruction(cpu_t *cpu, memory_t *memory, uint32_t cycles)
+void execute_instructions(cpu_t *cpu, memory_t *memory)
 {
-    while (cycles > 0) {
-        uint8_t instruction = fetch_byte(cpu, memory, &cycles);
+    while (1) {
+        uint8_t cycles = 0;
+        uint8_t ins = fetch_byte(cpu, memory, &cycles);
 
-        switch (instruction) {
+        switch (ins) {
         case INS_LDA_IM: {
             uint8_t value = fetch_byte(cpu, memory, &cycles);
             cpu->accumulator = value;
-            lda_set_status(cpu);
+            set_lda_status(cpu);
         } break;
 
         case INS_LDA_ZP: {
-            uint8_t zero_page_address = fetch_byte(cpu, memory, &cycles);
-            cpu->accumulator = read_byte(cpu, memory, &cycles, zero_page_address);
-            lda_set_status(cpu);
+            uint8_t address = fetch_byte(cpu, memory, &cycles);
+            cpu->accumulator = read_byte(cpu, memory, address, &cycles);
+            set_lda_status(cpu);
         } break;
 
         case INS_LDA_ZPX: {
-            uint8_t zero_page_address = fetch_byte(cpu, memory, &cycles);
-            zero_page_address += cpu->index_reg_x;
-            cycles--;
-            cpu->accumulator = read_byte(cpu, memory, &cycles, zero_page_address);
-            lda_set_status(cpu);
+            uint8_t address = fetch_byte(cpu, memory, &cycles);
+            cpu->accumulator = read_byte(cpu, memory, address + cpu->index_reg_x, &cycles);
+            cycles++;
+            set_lda_status(cpu);
         } break;
 
-        case INS_JSR: {
-            uint16_t address = fetch_word(cpu, memory, &cycles);
-            write_word(memory, cpu->stack_pointer, cpu->program_counter - 1, &cycles);
-            cpu->program_counter = address;
-            cycles--;
-        } break;
+        default:
+            printf("Invalid Instruction: 0x%x\n", ins);
+        }
 
-        default: {
-            printf("Invalid Instruction %d\n", instruction);
-        }
-        }
+        printf("Cycles Consumed: %d\n", cycles);
+
+        break;
     }
 }
-
